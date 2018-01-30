@@ -1,11 +1,47 @@
-service: serverless-cdp
+service: serverless-lighthouse
 
 provider:
   name: aws
   runtime: nodejs6.10
   region: us-east-1
+  # iamRoleStatements:
+  #   - Effect: Allow
+  #     Action:
+  #       - s3:*
+  #     Resource: "arn:aws:s3:::lighthouse-audits/*"
+
+plugins:
+  - serverless-plugin-chrome
+  - serverless-attach-managed-policy
+
+custom:
+  chrome:
+    flags:
+      - --window-size=1680x1050
+      - --hide-scrollbars
+      - --ignore-certificate-errors
+      - --headless
+      - --disable-gpu
+      - --no-sandbox
+      - --homedir=/tmp/randompath0
+      - --single-process
+      - --data-path=/tmp/randompath1
+      - --disk-cache-dir=/tmp/randompath2
 
 functions:
-  CDP:
-    handler: handler.chromeDevProto
+  auditor:
+    handler: handler.audit
     timeout: 180
+    # events:
+    #   - schedule:
+    #       rate: rate(1 minute)
+    #       enabled: false
+    #       input:
+    #         target: https://www.example.com/
+    #         mobile: false
+# resources:
+#   Resources:
+#     AuditBucket:
+#       Type: AWS::S3::Bucket
+#       Properties:
+#         BucketName: lighthouse-audits
