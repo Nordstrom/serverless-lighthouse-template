@@ -1,0 +1,15 @@
+{
+  "name": "serverless-cdp",
+  "version": "1.0.0",
+  "description": "> Using headless Chrome and Lambda, Puppeteer is a Node library which provides a high-level API to control headless Chrome or Chromium over the DevTools Protocol.",
+  "main": "handler.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jacob Aaron Wrolson",
+  "license": "ISC",
+  "dependencies": {
+    "@serverless-chrome/lambda": "^1.0.0-34",
+    "chrome-remote-interface": "^0.25.5"
+  }
+}
