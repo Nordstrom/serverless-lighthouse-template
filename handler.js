@@ -1,12 +1,23 @@
-// https://github.com/cyrus-and/chrome-remote-interface
-const CDP = require('chrome-remote-interface')
-// https://github.com/adieuadieu/serverless-chrome
-const launchChrome = require('@serverless-chrome/lambda')
+// https://github.com/GoogleChrome/lighthouse
+const lighthouse = require('lighthouse')
 // https://github.com/dbader/node-datadog-metrics
 const metrics = require('datadog-metrics')
 
-module.export.chromeDevProto = function(event, context, callback) {
-  const url = 'https://www.google.com/'
+module.exports.upTimer = (event, context, callback, chrome) => {
+
+  // event = {
+  //   "target": "https://shop.nordstrom.com",
+  //   "mobile": false
+  // }
+  console.log(event)
+
+  // Flags for launching lighhouse
+  // ref: https://github.com/GoogleChrome/lighthouse/blob/HEAD/docs/configuration.md
+  const flags = {
+    disableDeviceEmulation: !event.mobile || true,
+    disableCpuThrottling: true,
+    disableNetworkThrottling: true
+  }
 
   // Initialize datadog metrics collection
   // ref: https://github.com/dbader/node-datadog-metrics#initialization
@@ -16,85 +27,42 @@ module.export.chromeDevProto = function(event, context, callback) {
     flushIntervalSeconds: 0,
     apiKey: process.env.DATADOG_API_KEY,
     appKey: process.env.DATADOG_APP_KEY,
-    defaultTags: [
-      key: "value",
-      target: `${url}`
-    ]
+    defaultTags: [ `uptimer-target:${event.target}` ]
   })
 
-  // Set flags for launching Chrome
-  // https://peter.sh/experiments/chromium-command-line-switches/
-  const chromeFlags = {
-    flags: [
-      "--window-size=1680x1050",
-      "--hide-scrollbars",
-      "--ignore-certificate-errors",
-      "--headless",
-      "--disable-gpu",
-      "--no-sandbox",
-      "--homedir=/tmp/randompath0",
-      "--single-process",
-      "--data-path=/tmp/randompath1",
-      "--disk-cache-dir=/tmp/randompath2",
-      "--remote-debugging-port=9222"
-    ]
-  }
+  // Attach lighthouse to chrome and run an audit.
+  // ref: https://github.com/GoogleChrome/lighthouse/blob/master/docs/readme.md#using-programmatically
+  lighthouse(event.target, flags).then(function(results) {
+    // Increment the lighthouse counter
+    metrics.increment('lighthouse.invoke')
 
-  launchChrome(chromeFlags)
-    .then(chrome => {
-      CDP(client => {
+    // Get total page load time metric
+    // push metric to datadog, ref: https://github.com/dbader/node-datadog-metrics#gauges
+    metrics.gauge("total", results.timing.total)
 
-        // Deconstruct the client
-        const {Network, Page, Runtime} = client
+    // Get the Lighthouse score for the website
+    // ref: https://developers.google.com/web/tools/lighthouse/scoring
+    metrics.gauge("score", results.score)
 
-        // An event that triggers once Page emits a 'load' event.
-        // https://chromedevtools.github.io/devtools-protocol/tot/Page#event-loadEventFired
-        Page.loadEventFired(() => {
-          const pageMetrics = Runtime.evaluate({
-                expression: "JSON.parse(JSON.stringify(window.performance.timing))",
-                returnByValue: true
-              })
-              .then(function(pageMetrics) {
-                // console.log(pageMetrics.result.value)
-                // Parse performance blob and send metrics to Datadog
-                // https://github.com/dbader/node-datadog-metrics#gauges
-                const performance = pageMetrics.result.value
-                metrics.increment('chrome.launched')
-                metrics.gauge("redirect", (performance.redirectEnd - performance.redirectStart))
-                metrics.gauge("appCache", (performance.domainLookupStart - performance.fetchStart))
-                metrics.gauge("dns", (performance.domainLookupEnd - performance.domainLookupStart))
-                metrics.gauge("tcp", (performance.connectEnd - performance.connectStart))
-                metrics.gauge("request", (performance.responseStart - performance.requestStart))
-                metrics.gauge("response", (performance.responseEnd - performance.responseStart))
-                metrics.gauge("processing", (performance.domComplete - performance.domLoading))
-                metrics.gauge("domInteractive", (performance.domInteractive - performance.navigationStart))
-                metrics.gauge("domComplete", (performance.domComplete - performance.navigationStart))
-                metrics.gauge("onLoad", (performance.loadEventEnd - performance.loadEventStart))
-                metrics.gauge("total", (performance.loadEventEnd - performance.navigationStart))
-              })
+    // Parse report blob to extract performance metrics
+    results.reportCategories.filter(function(v){
+      return v["id"] == "performance"
+    })[0].audits.filter(function(v){
+      return v["group"] == "perf-metric"
+    }).forEach(function(chunk){
 
-          client.close()
-        })
+      // Push each metric to datadog
+      metrics.gauge(chunk.id, chunk.result.rawValue)
 
-        Promise.all([
-          Network.enable(),
-          Runtime.enable(),
-          Page.enable()
-        ])
-        .then(() => {
-          // Navigate to the given url
-          // https://chromedevtools.github.io/devtools-protocol/tot/Page#method-navigate
-          return Page.navigate({url: url})
-        })
-        .catch(err => {
-          console.error(err)
-          client.close()
-        })
-
-      })
-      .on('error', (err) => {
-        console.error(err)
-      })
     })
-    .then(callback)
+    return results
+  })
+  .then(() => {
+    // Flush metrics to Datadog
+    // ref: https://github.com/dbader/node-datadog-metrics#flushing
+    console.log('flushing metrics')
+    return metrics.flush()
+  })
+  .then(() => callback())
+  .catch(callback)
 }
