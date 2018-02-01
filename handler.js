@@ -3,7 +3,7 @@ const lighthouse = require('lighthouse')
 // https://github.com/dbader/node-datadog-metrics
 const metrics = require('datadog-metrics')
 
-module.exports.upTimer = (event, context, callback, chrome) => {
+module.exports.audit = (event, context, callback, chrome) => {
 
   // event = {
   //   "target": "https://shop.nordstrom.com",
@@ -27,7 +27,7 @@ module.exports.upTimer = (event, context, callback, chrome) => {
     flushIntervalSeconds: 0,
     apiKey: process.env.DATADOG_API_KEY,
     appKey: process.env.DATADOG_APP_KEY,
-    defaultTags: [ `uptimer-target:${event.target}` ]
+    defaultTags: [ `audit-target:${event.target}` ]
   })
 
   // Attach lighthouse to chrome and run an audit.
